@@ -1,14 +1,24 @@
-import type { PluginAgentPanelProps, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import type {
+  PluginAgentPanelProps,
+  PluginPanelTab,
+  PluginWorkspacePanelProps,
+} from "@getpaseo/plugin/client";
+import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { PluginClientStateProvider } from "@getpaseo/plugin/client/host";
 import { CircleAlert } from "lucide-react-native";
-import { useMemo } from "react";
-import { Text, View } from "react-native";
+import { type ComponentType, useMemo, useRef } from "react";
+import { Image, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { usePaneContext } from "@/panels/pane-context";
-import { definePanel, type PanelDescriptor } from "@/panels/panel-registry";
+import {
+  definePanel,
+  type PanelDescriptor,
+  type PanelDescriptorContext,
+  type PanelIconProps,
+} from "@/panels/panel-registry";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import { useWorkspaceExists } from "@/stores/session-store-hooks";
@@ -22,7 +32,61 @@ import { useInstalledPlugin } from "../registry";
 import { PluginInstallationProvider } from "../installation-provider";
 import { SurfaceErrorBoundary } from "../surface-error-boundary";
 import { resolvePluginWorkspacePanel } from "./resolution";
+import {
+  isImageIcon,
+  type PluginTabState,
+  readPluginTabState,
+  toTabStateJson,
+  withPluginState,
+  withPresentation,
+} from "./tab-state";
 import { resolvePluginPlatform } from "../platform";
+
+function usePluginPanelTab(): PluginPanelTab {
+  const { state, setCurrentTabState } = usePaneContext();
+  // Calls in the same tick (setState then setPresentation) must not drop each other.
+  const latest = useRef<PluginTabState>({});
+  latest.current = readPluginTabState(state);
+  return useMemo(() => {
+    const write = (next: PluginTabState) => {
+      latest.current = next;
+      setCurrentTabState(toTabStateJson(next));
+    };
+    return {
+      state: readPluginTabState(state).plugin,
+      setState: (plugin) => write(withPluginState(latest.current, plugin as JsonValue)),
+      setPresentation: (presentation) => write(withPresentation(latest.current, presentation)),
+    };
+  }, [state, setCurrentTabState]);
+}
+
+const imageIcons = new Map<string, ComponentType<PanelIconProps>>();
+
+function PluginTabImage({ uri, size }: { uri: string; size: number }) {
+  const source = useMemo(() => ({ uri }), [uri]);
+  const style = useMemo(() => ({ width: size, height: size }), [size]);
+  return <Image source={source} style={style} resizeMode="contain" />;
+}
+
+// Same component per URL, so the tab bar does not remount the image on every render.
+function imageIcon(uri: string): ComponentType<PanelIconProps> {
+  let icon = imageIcons.get(uri);
+  if (!icon) {
+    const PluginImageIcon = ({ size }: PanelIconProps) => <PluginTabImage uri={uri} size={size} />;
+    icon = PluginImageIcon;
+    imageIcons.set(uri, icon);
+  }
+  return icon;
+}
+
+function resolveTabIcon(icon: string | undefined, fallback: string): ComponentType<PanelIconProps> {
+  if (icon && isImageIcon(icon)) return imageIcon(icon);
+  try {
+    return resolvePluginIcon(icon ?? fallback);
+  } catch {
+    return resolvePluginIcon(fallback);
+  }
+}
 
 const pluginThemeMapping = (theme: Theme) => ({
   theme: toPluginTheme(theme),
@@ -51,6 +115,7 @@ function PluginPanelBody({ theme }: { theme: PluginTheme }) {
   const layout = useMemo(() => ({ compact, platform: resolvePluginPlatform() }), [compact]);
   const stateSource = useMemo(() => createPluginClientStateSource(serverId), [serverId]);
   const navigation = usePluginHostNavigation(serverId);
+  const tab = usePluginPanelTab();
 
   if (!plugin || !contribution || !workspaceExists) {
     return <PluginPanelUnavailable />;
@@ -68,6 +133,7 @@ function PluginPanelBody({ theme }: { theme: PluginTheme }) {
       host,
       layout,
       navigation,
+      tab,
       workspaceId,
     };
     const Component = contribution.Component;
@@ -80,6 +146,7 @@ function PluginPanelBody({ theme }: { theme: PluginTheme }) {
       host,
       layout,
       navigation,
+      tab,
       workspaceId,
       agentId: target.agentId,
     };
@@ -123,7 +190,7 @@ function PluginPanelUnavailable({
 
 function usePluginPanelDescriptor(
   target: Extract<import("@/workspace-tabs/model").WorkspaceTabTarget, { kind: "plugin" }>,
-  context: { serverId: string },
+  context: PanelDescriptorContext,
 ): PanelDescriptor {
   const plugin = useInstalledPlugin(context.serverId, target.pluginId);
   const panel = plugin?.workspacePanels.find(
@@ -139,12 +206,13 @@ function usePluginPanelDescriptor(
       statusBucket: null,
     };
   }
+  const { title, icon } = readPluginTabState(context.state);
   return {
-    label: panel.title,
+    label: title ?? panel.title,
     subtitle: target.pluginId,
-    tooltip: panel.title,
+    tooltip: title ?? panel.title,
     titleState: "ready",
-    icon: resolvePluginIcon(panel.icon),
+    icon: resolveTabIcon(icon, panel.icon),
     statusBucket: null,
   };
 }

@@ -1565,7 +1565,32 @@ export default function contribute(client: PluginClientContext) {
 | `locations` | No       | `workspace` and/or `explorer`. Defaults to `workspace`.       |
 | `Component` | Yes      | React Native component matching the selected context's props. |
 
-A workspace panel receives `PluginWorkspacePanelProps`: `context: "workspace"`, `theme`, `host`, `layout`, and `workspaceId`. An agent panel receives `PluginAgentPanelProps`: `context: "agent"`, the same common fields and `workspaceId`, plus `agentId`.
+A workspace panel receives `PluginWorkspacePanelProps`: `context: "workspace"`, `theme`, `host`, `layout`, `tab`, and `workspaceId`. An agent panel receives `PluginAgentPanelProps`: `context: "agent"`, the same common fields and `workspaceId`, plus `agentId`.
+
+### Per-tab state and title
+
+The same panel can be open in several tabs. `tab` belongs to the tab the component renders in, and Paseo persists it with the workspace layout, so it survives tab switches and reloads:
+
+| Member                                 | Meaning                                                                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tab.state`                            | The value last passed to `setState` for this tab, or `undefined`.                                                                            |
+| `tab.setState(value)`                  | Replaces this tab's state. The value must be JSON-serializable.                                                                              |
+| `tab.setPresentation({ title, icon })` | Overrides this tab's title and icon. `icon` is a Lucide icon name or an image URL. Omitted fields fall back to the `addWorkspacePanel` ones. |
+
+Keep in `tab.state` what makes one tab differ from another, such as the selected item, and use `setPresentation` to name the tab after it. The tab keeps its title and icon while the panel is unmounted. `tab` is `undefined` on older hosts.
+
+```tsx
+import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+
+export function DocsPanel({ tab }: PluginWorkspacePanelProps) {
+  const page = typeof tab?.state === "string" ? tab.state : undefined;
+  const open = (next: string) => {
+    tab?.setState(next);
+    tab?.setPresentation({ title: next, icon: "BookOpen" });
+  };
+  // ...
+}
+```
 
 Read cached state with `useWorkspace(workspaceId, selector)` and `useAgent(agentId, selector)`. A selector is required. Paseo compares its result shallowly, so selecting `{ name, status }` does not re-render when unrelated fields change. Select every field the component renders in one call; do not select the whole snapshot.
 

@@ -106,12 +106,31 @@ interface PluginWorkspacePanelBase {
   locations?: readonly PluginPanelLocation[];
 }
 
-export interface PluginWorkspacePanelProps extends PluginNavigableHostProps {
+/** The workspace tab a panel is rendered in. Several tabs can show the same panel. */
+export interface PluginPanelTab {
+  /** What the panel stored for this tab with setState; persisted with the layout. */
+  readonly state: unknown;
+  /** Replaces this tab's state. Must be JSON-serializable. */
+  setState(state: unknown): void;
+  /**
+   * Overrides this tab's title and icon, persisted with the layout so the tab keeps them while
+   * unmounted. `icon` is a Lucide icon name or an image URL. Omitted fields fall back to the
+   * panel's contribution.
+   */
+  setPresentation(presentation: { title?: string; icon?: string }): void;
+}
+
+interface PluginPanelTabProps extends PluginNavigableHostProps {
+  /** Undefined on older hosts; keep panel state in memory when absent. */
+  readonly tab?: PluginPanelTab;
+}
+
+export interface PluginWorkspacePanelProps extends PluginPanelTabProps {
   context: "workspace";
   workspaceId: string;
 }
 
-export interface PluginAgentPanelProps extends PluginNavigableHostProps {
+export interface PluginAgentPanelProps extends PluginPanelTabProps {
   context: "agent";
   workspaceId: string;
   agentId: string;

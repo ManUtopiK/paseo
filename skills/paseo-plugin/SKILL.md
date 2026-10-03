@@ -188,7 +188,10 @@ export default function contribute(client: PluginClientContext) {
 
 Use `useWorkspace(id, selector)` and `useAgent(id, selector)`. Selectors are required
 and their results use shallow equality. Never select the whole snapshot or add an RPC to discover
-the active workspace or agent. Command callbacks receive the selected host's `paseo`, typed
+the active workspace or agent. A panel can be open in several tabs: keep per-tab state (the
+selected item) in `tab.state` / `tab.setState`, persisted with the layout, and name the tab after
+it with `tab.setPresentation({ title, icon })`, where `icon` is a Lucide name or an image URL.
+Command callbacks receive the selected host's `paseo`, typed
 `rpc(contract, input)`, `openScreen({ screenId, params? })`, and contextual `openPanel(id)`
 capabilities.
 
